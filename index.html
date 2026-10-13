@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>niivue bench</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header>
+  <a href="/v06.html">0.6x</a> <a href="/v1.html">1.0</a>
+  <a href="/v1.html?backend=webgl2">1.0 WebGL2</a>
+  <a href="/v06.html?dpr=1&aa=0">0.6x low-DPI no-AA</a>
+  <a href="/v1.html?dpr=1&aa=0">1.0 low-DPI no-AA</a>
+  <button id="copy">Copy TSV</button> <button id="clear">Clear</button>
+</header>
+<p>ms/frame (median of reps; lower is better). Latest run per configuration. Add <code>&amp;auto=1</code> to a bench URL to run the suite on load.</p>
+<table id="t"></table>
+<script type="module">
+  const rows = JSON.parse(localStorage.nvbench ?? '[]')
+  const cfg = (r) => `${r.version} ${r.backend} dpr=${r.dpr} aa=${r.aa} shade=${r.shade} mod=${r.mod} rate=${r.rate ?? 2} ${r.canvas} ${r.ua}`
+  const cols = [...new Set(rows.map(cfg))]
+  const scen = [...new Set(rows.map((r) => r.scenario))]
+  const cell = Object.fromEntries(rows.map((r) => [`${r.scenario}|${cfg(r)}`, r.ms]))
+  const grid = [['scenario', ...cols], ...scen.map((s) => [s, ...cols.map((c) => cell[`${s}|${c}`] ?? '')])]
+  for (const [i, line] of grid.entries()) {
+    const tr = t.insertRow()
+    for (const v of line) tr.append(Object.assign(document.createElement(i ? 'td' : 'th'), { textContent: v }))
+  }
+  copy.onclick = () => navigator.clipboard.writeText(grid.map((l) => l.join('\t')).join('\n'))
+  clear.onclick = () => { localStorage.removeItem('nvbench'); location.reload() }
+  addEventListener('storage', () => location.reload())
+</script>
+</body>
+</html>

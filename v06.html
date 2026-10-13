@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>bench 0.6x</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<script type="module">
+  import { MULTIPLANAR_TYPE, Niivue, SHOW_RENDER, SLICE_TYPE } from 'nv06'
+  import { colormaps, P, run, volumeList } from '/bench.js'
+
+  const nv = new Niivue({ backColor: [0, 0, 0, 1], show3Dcrosshair: true, multiplanarLayout: MULTIPLANAR_TYPE.GRID })
+  window.nv = nv
+  run({
+    version: __NV06__,
+    backend: 'webgl2',
+    syncDraw: true, // drawScene() renders immediately (and calls gl.finish)
+    async init(canvas) {
+      await nv.attachToCanvas(canvas, P.aa)
+      nv.setHighResolutionCapable(P.dpr) // 0 = native DPR
+      // Sets the amount before the first load, which only then builds the gradient.
+      await nv.setVolumeRenderIllumination(P.shade)
+      for (const [id, c] of colormaps) nv.addColormap(id, c)
+    },
+    async load(ov) {
+      await nv.loadVolumes(volumeList(ov, ['cal_min', 'cal_max']))
+      if (P.mod) for (const v of nv.volumes.slice(1)) nv.setModulationImage(v.id, v.id, 1)
+      await nv.setVolumeRenderIllumination(P.shade)
+    },
+    view(layout) {
+      nv.opts.multiplanarShowRender = layout === 'multi2d' ? SHOW_RENDER.NEVER : SHOW_RENDER.ALWAYS
+      nv.scene.crosshairPos = [0.5, 0.5, 0.5]
+      nv.setRenderAzimuthElevation(110, 15)
+      nv.setSliceType({ render: SLICE_TYPE.RENDER, axial: SLICE_TYPE.AXIAL }[layout] ?? SLICE_TYPE.MULTIPLANAR)
+    },
+    step(i, anim) {
+      if (anim === 'rotate') nv.setRenderAzimuthElevation(110 + 2 * i, 15)
+      else nv.moveCrosshairInVox(0, 0, i % 40 < 20 ? 1 : -1)
+    },
+  })
+</script>
+</body>
+</html>

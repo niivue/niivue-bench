@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>volume raymarch micro-benchmark</title>
+<style>
+  body { font: 13px/1.4 ui-monospace, monospace; background: #111; color: #ddd; margin: 8px }
+  canvas { width: 450px; height: 350px; background: #000; border: 1px solid #333; image-rendering: pixelated }
+  pre { white-space: pre-wrap }
+</style>
+<pre id="out">running...</pre>
+<div>
+  <canvas id="cv-webgl2"></canvas>
+  <canvas id="cv-webgpu"></canvas>
+</div>
+<script type="module" src="./micro.js"></script>

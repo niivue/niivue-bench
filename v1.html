@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>bench 1.0</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<script type="module">
+  import NiiVue from 'nv1'
+  import { colormaps, P, run, volumeList } from '/bench.js'
+
+  // Numeric values: early release candidates do not export these enums.
+  const MULTIPLANAR_GRID = 2
+  const SHOW_RENDER = { NEVER: 0, ALWAYS: 1 }
+  const SLICE_TYPE = { AXIAL: 0, MULTIPLANAR: 3, RENDER: 4 }
+  const nv = new NiiVue({
+    backend: P.backend,
+    isAntiAlias: P.aa,
+    backgroundColor: [0, 0, 0, 1],
+    is3DCrosshairVisible: true,
+  })
+  nv.isOrientCubeVisible = false // 0.6x default
+  window.nv = nv
+  const a = {
+    version: __NV1__,
+    hasBackends: true,
+    syncDraw: false, // drawScene() only schedules a rAF render
+    async init(canvas) {
+      await nv.attachToCanvas(canvas)
+      // The constructor devicePixelRatio option is dropped in rc.13; the setter works.
+      if (P.dpr) nv.devicePixelRatio = P.dpr
+      nv.volumeSampleRate = P.rate
+      a.backend = nv.backend ?? P.backend // actual backend, in case of fallback
+      for (const [id, c] of colormaps) nv.addColormap(id, c)
+    },
+    async load(ov) {
+      await nv.loadVolumes(volumeList(ov, ['calMin', 'calMax']))
+      if (P.mod) for (const v of nv.volumes.slice(1)) await nv.setModulationImage(v.id, v.id, 1)
+      nv.volumeIllumination = P.shade
+    },
+    view(layout) {
+      nv.multiplanarType = MULTIPLANAR_GRID
+      nv.showRender = layout === 'multi2d' ? SHOW_RENDER.NEVER : SHOW_RENDER.ALWAYS
+      nv.crosshairPos = [0.5, 0.5, 0.5]
+      nv.azimuth = 110
+      nv.elevation = 15
+      nv.sliceType = { render: SLICE_TYPE.RENDER, axial: SLICE_TYPE.AXIAL }[layout] ?? SLICE_TYPE.MULTIPLANAR
+    },
+    step(i, anim) {
+      if (anim === 'rotate') nv.azimuth = 110 + 2 * i
+      else nv.moveCrosshairInVox(0, 0, i % 40 < 20 ? 1 : -1)
+    },
+  }
+  run(a)
+</script>
+</body>
+</html>

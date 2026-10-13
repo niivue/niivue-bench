@@ -1,0 +1,33 @@
+# deps / build
+node_modules/
+dist/
+.vite/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs and tool output (drive.mjs / patch.mjs screenshots)
+*.log
+*.png
+
+# Machine-local symlink to mono dev-images (Git LFS); see README
+public/volumes
+
+# Neuroimaging data
+*.nii
+*.nii.gz
+*.mgz
+*.mgh
+*.nrrd
+*.mha
+*.mhd
+*.raw
+*.gii
+*.trk
+*.trx
+*.tck
+*.dcm
+*.zarr/

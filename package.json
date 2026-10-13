@@ -1,0 +1,16 @@
+{
+  "name": "niivue-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --force"
+  },
+  "dependencies": {
+    "nv06": "npm:@niivue/niivue@0.62.1",
+    "nv1": "npm:@niivue/niivue@1.0.0-rc.14"
+  },
+  "devDependencies": {
+    "vite": "^7",
+    "playwright-core": "^1"
+  }
+}
