@@ -12,8 +12,10 @@ const P = {
   loop: num('loop', 4096),
   present: num('present', 1) !== 0, // present=0 renders offscreen (isolates swapchain/compositor cost)
   api: q.get('api'),
-  pre: num('pre', 0), // untimed identical passes before the timed one (GPU warm-up probe)
+  pre: num('pre', 0), // untimed identical passes before the timed one (GPU warm-up probe; WebGL2's timer query includes them)
+  spin: num('spin', 0) !== 0, // spin=1 runs an extra empty requestAnimationFrame loop alongside rendering
 }
+if (P.spin) { const spin = () => requestAnimationFrame(spin); spin() }
 const DIM = 256
 const STEP = 1 / (256 * P.rate)
 const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1]
@@ -213,6 +215,12 @@ async function runWebGL2(vol) {
   const queries = []
 
   const draw = (az, timed) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+    for (let k = 0; k < P.pre; k++) {
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+      gl.uniform4f(uLoc, az, P.w / P.h, STEP, 0)
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+    }
     if (timed && tq) {
       queries.push(gl.createQuery())
       gl.beginQuery(tq.TIME_ELAPSED_EXT, queries[queries.length - 1])

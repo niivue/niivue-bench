@@ -9,7 +9,8 @@ if (process.env.ALPHA) await p.addInitScript((alpha) => {
 p.on('console', (m) => ['error', 'warning'].includes(m.type()) && console.log('console.' + m.type(), m.text().slice(0, 300)))
 p.on('pageerror', (e) => console.log('pageerror', e.message))
 await p.goto((process.env.BASE ?? 'http://localhost:5173/') + path)
-await p.waitForFunction(() => document.querySelectorAll('#results tr').length >= 8, null, { timeout: 600000 })
+// Poll on a timer: the default rAF polling is a free-running rAF loop, which slows WebGPU 2-4x (CLAUDE.md).
+await p.waitForFunction(() => document.querySelectorAll('#results tr').length >= 8, null, { timeout: 600000, polling: 1000 })
 console.log(await p.$eval('#results', (t) => [...t.rows].map((r) => [...r.cells].slice(0, 12).map((c) => c.textContent).join('\t')).join('\n')))
 await p.screenshot({ path: path.replace(/\W/g, '_') + '.png' })
 await b.close()

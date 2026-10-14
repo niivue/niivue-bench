@@ -23,12 +23,30 @@
     hasBackends: true,
     syncDraw: false, // drawScene() only schedules a rAF render
     async init(canvas) {
+      // viewport=1&vpfilter=1: for builds whose controller does not claim its events (claimEvents),
+      // NiiVue's own handlers would also zoom the 3D scene and start a contrast drag on the
+      // controller's wheel and right-drag, so one input renders twice. Hide those events from the
+      // listeners attachToCanvas registers (never detached).
+      const add = canvas.addEventListener
+      if (P.viewport && P.vpfilter === '1') {
+        canvas.addEventListener = function (type, fn, opts) {
+          const skip = type === 'wheel' ? () => true : type.startsWith('pointer') ? (e) => e.button === 2 || (e.buttons & 2) : null
+          return add.call(this, type, skip ? (e) => { if (!skip(e)) fn(e) } : fn, opts)
+        }
+      }
       await nv.attachToCanvas(canvas)
+      canvas.addEventListener = add
       // The constructor devicePixelRatio option is dropped in rc.13; the setter works.
       if (P.dpr) nv.devicePixelRatio = P.dpr
       nv.volumeSampleRate = P.rate
       a.backend = nv.backend ?? P.backend // actual backend, in case of fallback
       for (const [id, c] of colormaps) nv.addColormap(id, c)
+      if (P.viewport) { // viewport=1: attach the pan/zoom controller (local builds; see vite.config.js)
+        const { NVCanvasViewportController } = await import('nv1/viewport')
+        // lastApply is stamped before setViewport, which may render synchronously.
+        window.vpc = new NVCanvasViewportController(canvas, { claimEvents: P.claim !== '0', apply: (v) => { window.lastApply ??= performance.now(); nv.setViewport(v) }, getViewport: () => nv.getViewport() })
+        window.vpc.attach()
+      }
     },
     async load(ov) {
       await nv.loadVolumes(volumeList(ov, ['calMin', 'calMax']))
