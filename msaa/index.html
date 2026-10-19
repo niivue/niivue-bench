@@ -1,0 +1,213 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSAA fragment cost</title>
+<!--
+Does 4x MSAA run the fragment shader once per pixel or once per sample?
+
+One full-screen triangle with an ALU-heavy fragment shader (no textures, no
+depth, no sample_index or per-sample interpolation) is drawn offscreen with
+MSAA off and with 4x MSAA, in WebGL2 and in WebGPU. Unless a shader asks for
+per-sample shading, both APIs shade once per pixel, so the 4x pass should cost
+about the same as the 1x pass (ratio near 1). A ratio near 4 means the shader
+ran once per sample.
+
+Blending is on, as in a volume ray-march. Without it, Apple GPUs' hidden
+surface removal shades only the last of several opaque full-screen draws that
+share a render pass, which makes the WebGL2 MSAA-off case look ~30x faster.
+
+URL options: ?size=1024&iters=500&frames=30
+-->
+<style>
+  body { font: 13px/1.5 ui-monospace, monospace; margin: 16px; background: #fff; color: #111 }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #ddd } }
+  pre { white-space: pre-wrap }
+</style>
+<pre id="out">running...</pre>
+<script type="module">
+const q = new URLSearchParams(location.search)
+const SIZE = +(q.get('size') ?? 1024)
+const ITERS = +(q.get('iters') ?? 500)
+const FRAMES = +(q.get('frames') ?? 30)
+const WARMUP = 5
+
+// Identical per-fragment work in both languages: ITERS rounds of a sin hash.
+// `iters` and `seed` are uniforms so the loop cannot be folded away.
+const GLSL_VS = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`
+const GLSL_FS = `#version 300 es
+precision highp float;
+uniform uint iters;
+uniform float seed;
+out vec4 color;
+void main() {
+  vec3 v = vec3(gl_FragCoord.xy * 0.001, seed);
+  for (uint i = 0u; i < iters; i++) v = fract(sin(v.yzx * 1.37 + v) * 43758.5453);
+  color = vec4(v * 0.5, 0.5);
+}`
+const WGSL = `
+struct U { iters: u32, seed: f32 }
+@group(0) @binding(0) var<uniform> u: U;
+
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  return vec4f(p * 2.0 - 1.0, 0.0, 1.0);
+}
+fn shade(pos: vec4f) -> vec4f {
+  var v = vec3f(pos.xy * 0.001, u.seed);
+  for (var i = 0u; i < u.iters; i++) { v = fract(sin(v.yzx * 1.37 + v) * 43758.5453); }
+  return vec4f(v * 0.5, 0.5);
+}
+@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f { return shade(pos); }`
+
+async function webgl2() {
+  const gl = document.createElement('canvas').getContext('webgl2', { antialias: false, depth: false })
+  if (!gl) throw new Error('WebGL2 unavailable')
+  const shader = (type, src) => {
+    const s = gl.createShader(type)
+    gl.shaderSource(s, src)
+    gl.compileShader(s)
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s))
+    return s
+  }
+  const prog = gl.createProgram()
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, GLSL_VS))
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, GLSL_FS))
+  gl.linkProgram(prog)
+  gl.useProgram(prog)
+  gl.uniform1ui(gl.getUniformLocation(prog, 'iters'), ITERS)
+  const seedLoc = gl.getUniformLocation(prog, 'seed')
+
+  const target = (samples) => {
+    const fbo = gl.createFramebuffer()
+    const rb = gl.createRenderbuffer()
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb)
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, SIZE, SIZE)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb)
+    return fbo
+  }
+  const resolved = target(0)
+  const msaa = target(4)
+  const px = new Uint8Array(4)
+  gl.viewport(0, 0, SIZE, SIZE)
+  gl.enable(gl.BLEND)
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+
+  const draw = (samples, frame) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, samples > 1 ? msaa : resolved)
+    gl.uniform1f(seedLoc, frame * 0.01)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    if (samples > 1) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, msaa)
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, resolved)
+      gl.blitFramebuffer(0, 0, SIZE, SIZE, 0, 0, SIZE, SIZE, gl.COLOR_BUFFER_BIT, gl.NEAREST)
+    }
+  }
+  // readPixels blocks until the GPU has finished every queued draw.
+  const finish = () => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, resolved)
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+  }
+  const time = (samples) => {
+    for (let i = 0; i < WARMUP; i++) draw(samples, i)
+    finish()
+    const t0 = performance.now()
+    for (let i = 0; i < FRAMES; i++) draw(samples, i)
+    finish()
+    return (performance.now() - t0) / FRAMES
+  }
+  return { off: time(1), on: time(4) }
+}
+
+async function webgpu() {
+  const adapter = await navigator.gpu?.requestAdapter()
+  if (!adapter) throw new Error('WebGPU unavailable')
+  const device = await adapter.requestDevice()
+  const module = device.createShaderModule({ code: WGSL })
+  const format = 'rgba8unorm'
+  const tex = (sampleCount) =>
+    device.createTexture({ size: [SIZE, SIZE], format, sampleCount, usage: GPUTextureUsage.RENDER_ATTACHMENT }).createView()
+  const resolved = tex(1)
+  const msaa = tex(4)
+
+  const ubo = device.createBuffer({ size: 8, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+  const setUniforms = (frame) => {
+    const b = new ArrayBuffer(8)
+    new Uint32Array(b, 0, 1)[0] = ITERS
+    new Float32Array(b, 4, 1)[0] = frame * 0.01
+    device.queue.writeBuffer(ubo, 0, b)
+  }
+
+  const blend = { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+  const pipeline = (samples) => {
+    const p = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module, entryPoint: 'vs' },
+      fragment: { module, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] },
+      multisample: { count: samples },
+    })
+    const entries = [{ binding: 0, resource: { buffer: ubo } }]
+    return { p, bind: device.createBindGroup({ layout: p.getBindGroupLayout(0), entries }) }
+  }
+
+  const encodeDraw = (enc, samples, { p, bind }) => {
+    const pass = enc.beginRenderPass({
+      colorAttachments: [{
+        view: samples > 1 ? msaa : resolved,
+        resolveTarget: samples > 1 ? resolved : undefined,
+        loadOp: 'clear',
+        storeOp: samples > 1 ? 'discard' : 'store',
+      }],
+    })
+    pass.setPipeline(p)
+    pass.setBindGroup(0, bind)
+    pass.draw(3)
+    pass.end()
+  }
+
+  const time = async (samples) => {
+    const pipe = pipeline(samples)
+    const frames = async (n) => {
+      for (let i = 0; i < n; i++) {
+        setUniforms(i)
+        const enc = device.createCommandEncoder()
+        encodeDraw(enc, samples, pipe)
+        device.queue.submit([enc.finish()])
+      }
+      await device.queue.onSubmittedWorkDone()
+    }
+    await frames(WARMUP)
+    const t0 = performance.now()
+    await frames(FRAMES)
+    return (performance.now() - t0) / FRAMES
+  }
+
+  return { off: await time(1), on: await time(4) }
+}
+
+const out = document.getElementById('out')
+const pad = (s, n) => String(s).padEnd(n)
+const lines = [
+  navigator.userAgent,
+  `${SIZE}x${SIZE}, ${ITERS} iterations, ${FRAMES} frames`,
+  '',
+  `${pad('API', 8)}${pad('MSAA off', 11)}${pad('MSAA 4x', 11)}ratio`,
+]
+for (const [name, run] of [['WebGL2', webgl2], ['WebGPU', webgpu]]) {
+  try {
+    const r = await run()
+    lines.push(`${pad(name, 8)}${pad(r.off.toFixed(2) + ' ms', 11)}${pad(r.on.toFixed(2) + ' ms', 11)}${(r.on / r.off).toFixed(1)}x`)
+    if (r.off < 2) lines.push(`        (MSAA-off frame under 2 ms; raise ?iters= for a stable ratio)`)
+  } catch (e) {
+    lines.push(`${pad(name, 8)}${e.message ?? e}`)
+  }
+  out.textContent = lines.join('\n')
+}
+lines.push('', 'ratio near 1x: the shader runs once per pixel (expected).', 'ratio near 4x: the shader runs once per sample.')
+out.textContent = lines.join('\n')
+window.done = lines
+</script>

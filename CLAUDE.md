@@ -204,3 +204,25 @@ Branch state: work is on branch `docs/ct-demo` in `~/src/mono`, pushed 2026-09-1
   power; rejected). File a Chromium bug with `micro/` + `tools/micro-input.mjs`.
 - Flags tried on `micro/` (via new `CHROME_ARGS` env in `tools/micro-input.mjs`): `--force-high-performance-gpu`,
   `--enable-webgpu-developer-features`, and both together. Hover penalty unchanged (~1.8 -> 4.2-5.3 GPU ms).
+
+## Re-check 2026-10-14 (mono main e05a2b6e; Chrome 155.0.8059.79, AC, headed)
+
+- 0.62 vs main, WebGL2 wall ms (two passes agreed): 3D 1.8 / 1.9; 3D+1 ov 3.9 / 3.8; 4-pane 1.4 / 1.6;
+  4-pane+1 ov 2.4 / 2.5; 3D+3 ov 4.0 / 3.7. Parity holds. Only multi2d (A+C+S) is slower, 0.9-1.5 / 1.8
+  (below the 2.5 ms noise floor; 0.62 passes disagreed).
+- WebGPU at rest (gputime): 3D 0.93 GPU ms, same as rc.14 on the same Chrome. A first-in-browser 2.9 ms
+  reading was the multimodal GPU state; interleave builds before calling a regression.
+- Input penalty unchanged on Chrome 155: WebGPU 0.93 -> 3.5 (hover), 3.2 (drag), 4.7 (wheel) GPU ms; WebGL2 flat.
+  `micro/` reproduces it (2.1 idle -> 4.8 hover, 5.4 off-canvas). Still a Chrome/Dawn bug, still unfiled.
+
+## Safari WebGPU MSAA penalty (2026-10-18; M4 Pro, macOS 26.6.2, AC)
+
+- `msaa/` (no NiiVue, ALU-only full-screen draw, blending on, 1024x1024, 500 iters), ms off -> 4x:
+  Chrome 155 WebGL2 6.6 -> 5.3, WebGPU 5.9 -> 5.6; Firefox WebGL2 7.5 -> 6.1, WebGPU 6.8 -> 6.7;
+  Safari 26.6.2 WebGL2 6.9 -> 5.3, WebGPU 5.8 -> 23.2 (4.0x; also 4.0x at 1000 iters). Safari's WebGPU
+  shades per sample under MSAA. Contradicts niivue/niivue#1619's "Safari 26.x unaffected". Tracked as
+  niivue/mono#318; related WebKit 326660. Unfiled with WebKit.
+- Blending must stay on: without it Apple TBDR hidden-surface removal shades only the last of the 30
+  opaque full-screen draws ANGLE merges into one pass, so WebGL2 MSAA-off read ~30x too fast.
+- A fragment-stage atomic invocation counter is not a valid probe: it read 4/pixel under MSAA even in
+  Chrome, where timing shows per-pixel shading (the storage write changes the shading rate).

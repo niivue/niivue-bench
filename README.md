@@ -25,9 +25,16 @@ Layout, overlay count, and animation (scroll/rotate) are chosen from the page UI
 
 `index.html` (`/`) pivots every stored run (`localStorage.nvbench`) into a scenario x config grid, `ms` per cell. "Copy TSV" for spreadsheets; "Clear" wipes storage. Results persist across reloads and versions, so old runs accumulate — clear before a clean comparison sweep.
 
+## Standalone pages (no NiiVue)
+
+Plain WebGL2 + WebGPU pages with inline shaders, for reproducing browser issues without the library. Open them from `bun run dev` (any static server works; WebGPU needs `localhost` or HTTPS).
+
+- `micro/` - a NiiVue-free volume ray-march timed in both APIs. Params: `w`, `h`, `frames`, `warmup`, `aa`, `depth`, `rate`, `loop`, `present`, `api`, `pre`, `usage` (see the top of `micro/micro.js`).
+- `msaa/` - does 4x MSAA shade per pixel or per sample? Times an ALU-heavy full-screen draw with MSAA off and 4x, prints the ratio (about 1x expected, 4x means per-sample shading). Params: `size`, `iters`, `frames`. Safari's WebGPU shows 4x; Chrome, Firefox and every WebGL2 show about 1x (see `CLAUDE.md`).
+
 ## Version switching
 
-    bun add nv1@npm:@niivue/niivue@1.0.0-rc.13
+    bun add nv1@npm:@niivue/niivue@1.0.0-rc.14
     bun add nv06@npm:@niivue/niivue@0.62.1
 
 `bun run dev` uses `vite --force` so the new version is re-bundled.
